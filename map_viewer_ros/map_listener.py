@@ -1,60 +1,37 @@
 import sys
-from robot_pose_manager import RobotClient
+from threading import Thread
 
 import rclpy
 from rclpy.node import Node
 from nav_msgs.msg import OccupancyGrid
 
-
 import numpy as np
 import pygame
-
 
 class MapViewer(Node):
     def __init__(self):
         super().__init__('map_viewer')
 
-        self.robot_client = RobotClient()
-
-        self.subscription = self.create_subscription(
-            OccupancyGrid,
-            '/map',
-            self.listener_callback,
-            10)
-
-        # pygame 초기화
         pygame.init()
+        
         self.screen = pygame.display.set_mode((1280, 720))
+
+
         pygame.display.set_caption("Map Navigation")
+        
+
         self.running = True
+        self.map_info = msg.info
         self.map_surface = None
 
     def map_callback(self, msg):
-        self.map_info = msg.info
-
-
-    def listener_callback(self, msg):
-       
-        # width, height : size of map
-        # data : the probabilities of each occupancy grids
-        #
-
-        width = msg.info.width
-        height = msg.info.height
-        data = np.array(msg.data).reshape((height, width))
-        
-        # 0~100: free, 100: occupied, -1: unknown
-        # for more information, you can site that https://mathworks.com/help/robotics/ug/occupancy-grids.html
-        img = np.zeros((height, width, 3), dtype=np.uint8)
-        img[data == 0] = [255, 255, 255]      # white = free
-        img[data == 100] = [0, 0, 0]          # black = wall
-        img[data == -1] = [128, 128, 128]     # gray = unknown
-
-        
-        img = np.flipud(img)
-        img = np.rot90(img)
-
         self.map_surface = pygame.surfarray.make_surface(img)
+        
+        
+    def map_setting(self, msg):
+        self.map_surface = msg
+        
+        
 
 
     def map_to_pixel(x, y, info):
@@ -64,15 +41,11 @@ class MapViewer(Node):
         px = int((x - origin_x) / res)
         py = int((y - origin_y) / res)
         return px, py
-
-
         
 
     def draw_robot(screen, robot_pose, map_info):
         if robot_pose is None:
             return
-
-        x, y, yaw = robot_pose
 
         # map information
         # resolution, origin_x, origin_y
@@ -88,8 +61,6 @@ class MapViewer(Node):
         img_y = map_info.height - img_y
 
         #pygame.draw.circle(screen, (255, 0, 0), (img_x, img_y), 4)
-
-
             
         end_x = img_x + int(10 * math.cos(yaw))
         end_y = img_y - int(10 * math.sin(yaw))
@@ -107,7 +78,6 @@ class MapViewer(Node):
             if self.map_surface is not None:
                 self.screen.blit(pygame.transform.scale(self.map_surface, (1280, 720)), (0, 0))
 
-                pose = self.robot_client.get_robot_pose()
 
 
                 if pose:
@@ -131,7 +101,10 @@ class MapViewer(Node):
 def main(args=None):
     rclpy.init(args=args)
     viewer = MapViewer()
+
+
     viewer.run()
+    ros_thread.destroy_node()
     viewer.destroy_node()
     rclpy.shutdown()
 

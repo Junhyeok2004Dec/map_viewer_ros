@@ -1,10 +1,12 @@
 import math
 import numpy as np
 import rclpy
-from rclpy.node import Node
 import tf2_ros
+
+from rclpy.node import Node
 from geometry_msgs.msg import TransformStamped
 
+from map_listener import MapViewer
 
 from tf2_ros import TransformBroadcaster, TransformListener, Buffer
 from geometry_msgs.msg import TransformStamped
@@ -66,26 +68,62 @@ def quaternion_from_euler(ai, aj, ak):
 
 
 class RobotClient(Node):
-    def __init__(self, target_frame="map", source_frame="ego_racecar/laser"):
-        super().__init__('robot_pose_client')
-        self.target_frame = "map"
-        self.source_frame = "ego_racecar/base_link"
+    def __init__(self, target_frame="map", source_frame="ego_racecar/base_link"):
 
+        super().__init__('robot_pose_client')
+
+        self.subscription = self.create_subscription(
+            OccupancyGrid,
+            '/map',
+            self.listener_callback,
+            10)
+
+        
         self.tf_buffer = tf2_ros.Buffer()
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
 
 
+        self.target_frame = target_frame
+        self.source_frame = source_frame
+
+        self.timer = self.create_timer(0.005, self.get_robot_pose)
+        self.mapViewer = None
+
+        
+
+    def listener_callback(self, msg):
+       
+        # width, height : size of map
+        # data : the probabilities of each occupancy grids
+        #
+
+        width = msg.info.width
+        height = msg.info.height
+        data = np.array(msg.data).reshape((height, width))
+        
+        # 0~100: free, 100: occupied, -1: unknown
+        # for more information, you can site that https://mathworks.com/help/robotics/ug/occupancy-grids.html
+        img = np.zeros((height, width, 3), dtype=np.uint8)
+        img[data == 0] = [255, 255, 255]      # white = free
+        img[data == 100] = [0, 0, 0]          # black = wall
+        img[data == -1] = [128, 128, 128]     # gray = unknown
+
+        
+        img = np.flipud(img)
+        img = np.rot90(img)
+        pygame.surfarray.make_surface(img)
+
+        mapViewer 
+
     def get_robot_pose(self):
 
-
-
             try:
-                now = rclpy.time.Time()
+                
                 trans = self.tf_buffer.lookup_transform(
-                    self.target_frame,
-                    self.source_frame,
-                    rclpy.time.Time()
-                )
+                "map",                                      # Target frame
+                "ego_racecar/base_link",                    # Source frame
+                rclpy.time.Time())       # 최신 Transform 사용
+
 
                 x = trans.transform.translation.x
                 y = trans.transform.translation.y
@@ -104,3 +142,19 @@ class RobotClient(Node):
                 return None
 
        
+def main(args=None):
+    rclpy.init(args=args)
+    node = RobotClient()
+    mapViewer = MapViewer()
+
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
+
+
+if __name__ == '__main__':
+    main()
